@@ -229,12 +229,16 @@ class FaceTracker:
             # Show the frame
             cv2.imshow('Enhanced Face Tracker', frame)
             
-            # Handle key presses
+            # Handle key presses and window events
             key = cv2.waitKey(1) & 0xFF
             if key == ord('q'):
                 break
             elif key == ord('r'):
                 self.reset_tracking()
+            
+            # Check if window was closed with X button
+            if cv2.getWindowProperty('Enhanced Face Tracker', cv2.WND_PROP_VISIBLE) < 1:
+                break
         
         # Cleanup
         self.cap.release()
