@@ -23,6 +23,7 @@ class FaceTracker:
         self.prev_bbox = None
         self.tracking_failures = 0
         self.max_tracking_failures = 5
+        self.use_tracking = True  # Flag to enable/disable tracking
         
         # Colors for visualization
         self.GREEN = (0, 255, 0)
@@ -36,6 +37,14 @@ class FaceTracker:
         self.smoothing_factor = 0.7    # Smoothing for bbox updates
         
         print("Enhanced Face Tracker initialized!")
+        
+        # Check if any trackers are available
+        if not (hasattr(cv2, 'TrackerCSRT_create') or hasattr(cv2, 'TrackerKCF_create') or hasattr(cv2, 'TrackerMOSSE_create')):
+            print("No trackers available - using detection mode only")
+            self.use_tracking = False
+        else:
+            print("Trackers available - tracking mode enabled")
+        
         print("Press 'q' to quit, 'r' to reset tracking")
     
     def detect_faces(self, frame):
@@ -67,30 +76,48 @@ class FaceTracker:
     
     def initialize_tracker(self, frame, bbox):
         """Initialize the tracker with improved error handling"""
-        # Try multiple tracker types in order of preference
-        tracker_types = [
-            ('CSRT', lambda: cv2.TrackerCSRT_create()),
-            ('KCF', lambda: cv2.TrackerKCF_create()),
-            ('MOSSE', lambda: cv2.TrackerMOSSE_create())
-        ]
+        # Check what trackers are available
+        available_trackers = []
         
-        for tracker_name, tracker_creator in tracker_types:
+        # Test for OpenCV 4.x trackers
+        if hasattr(cv2, 'TrackerCSRT_create'):
+            available_trackers.append('CSRT')
+        if hasattr(cv2, 'TrackerKCF_create'):
+            available_trackers.append('KCF')
+        if hasattr(cv2, 'TrackerMOSSE_create'):
+            available_trackers.append('MOSSE')
+        
+        print(f"Available trackers: {available_trackers}")
+        
+        # Try available trackers in order of preference
+        for tracker_name in available_trackers:
             try:
-                self.tracker = tracker_creator()
-                success = self.tracker.init(frame, bbox)
-                if success:
-                    self.face_tracked = True
-                    self.face_bbox = bbox
-                    self.prev_bbox = bbox
-                    self.tracking_start_time = time.time()
-                    self.tracking_failures = 0
-                    print(f"Face tracking initialized with {tracker_name}!")
-                    return True
+                if tracker_name == 'CSRT':
+                    self.tracker = cv2.TrackerCSRT_create()
+                elif tracker_name == 'KCF':
+                    self.tracker = cv2.TrackerKCF_create()
+                elif tracker_name == 'MOSSE':
+                    self.tracker = cv2.TrackerMOSSE_create()
+                
+                if self.tracker is not None:
+                    success = self.tracker.init(frame, bbox)
+                    if success:
+                        self.face_tracked = True
+                        self.face_bbox = bbox
+                        self.prev_bbox = bbox
+                        self.tracking_start_time = time.time()
+                        self.tracking_failures = 0
+                        print(f"Face tracking initialized with {tracker_name}!")
+                        return True
+                    else:
+                        print(f"Failed to initialize {tracker_name} tracker")
+                else:
+                    print(f"Could not create {tracker_name} tracker")
             except Exception as e:
-                print(f"Failed to initialize {tracker_name} tracker: {e}")
+                print(f"Error initializing {tracker_name} tracker: {e}")
                 continue
         
-        print("Failed to initialize any tracker!")
+        print("No trackers available or all failed to initialize")
         return False
     
     def update_tracker(self, frame):
@@ -187,7 +214,7 @@ class FaceTracker:
             frame = cv2.flip(frame, 1)
             
             # Try to update existing tracker
-            if self.face_tracked:
+            if self.face_tracked and self.use_tracking:
                 bbox, success = self.update_tracker(frame)
                 
                 # If tracking fails too many times or we need to re-detect
@@ -199,8 +226,8 @@ class FaceTracker:
                 elif success:
                     self.draw_face_info(frame, bbox, is_tracking=True)
             
-            # Detect faces if not currently tracking
-            if not self.face_tracked:
+            # Detect faces if not currently tracking or if tracking is disabled
+            if not self.face_tracked or not self.use_tracking:
                 faces = self.detect_faces(frame)
                 
                 if len(faces) > 0:
@@ -208,10 +235,12 @@ class FaceTracker:
                     largest_face = max(faces, key=lambda x: x[2] * x[3])
                     x, y, w, h = largest_face
                     
-                    # Initialize tracker with the detected face
-                    if self.initialize_tracker(frame, (x, y, w, h)):
+                    # Initialize tracker with the detected face (if tracking is enabled)
+                    if self.use_tracking and self.initialize_tracker(frame, (x, y, w, h)):
                         self.draw_face_info(frame, (x, y, w, h), is_tracking=True)
                     else:
+                        # Use detection mode (no tracking)
+                        self.face_bbox = (x, y, w, h)
                         self.draw_face_info(frame, (x, y, w, h), is_tracking=False)
                 else:
                     # Draw "No face detected" message
@@ -220,6 +249,11 @@ class FaceTracker:
             
             # Draw frame info
             cv2.putText(frame, f"Frame: {frame_count}", (10, 60), 
+                       cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
+            
+            # Draw mode info
+            mode = "TRACKING" if self.use_tracking and self.face_tracked else "DETECTION"
+            cv2.putText(frame, f"Mode: {mode}", (10, 80), 
                        cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
             
             # Draw instructions
