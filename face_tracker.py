@@ -7,6 +7,11 @@ class FaceTracker:
         # Initialize the webcam
         self.cap = cv2.VideoCapture(0)
         
+        # Set camera properties for better performance
+        self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
+        self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
+        self.cap.set(cv2.CAP_PROP_FPS, 30)
+        
         # Load the pre-trained face detection model
         self.face_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_frontalface_default.xml')
         
@@ -15,6 +20,9 @@ class FaceTracker:
         self.tracker = None
         self.face_bbox = None
         self.tracking_start_time = None
+        self.prev_bbox = None
+        self.tracking_failures = 0
+        self.max_tracking_failures = 5
         
         # Colors for visualization
         self.GREEN = (0, 255, 0)
@@ -22,76 +30,130 @@ class FaceTracker:
         self.BLUE = (255, 0, 0)
         self.YELLOW = (0, 255, 255)
         
-        # Tracking parameters
-        self.tracking_threshold = 0.3  # Minimum confidence for tracking
-        self.detection_interval = 30   # Re-detect face every N frames
+        # Improved tracking parameters
+        self.tracking_threshold = 0.2  # Lower threshold for better tracking
+        self.detection_interval = 15   # More frequent re-detection
+        self.smoothing_factor = 0.7    # Smoothing for bbox updates
         
-        print("Face Tracker initialized!")
+        print("Enhanced Face Tracker initialized!")
         print("Press 'q' to quit, 'r' to reset tracking")
     
     def detect_faces(self, frame):
-        """Detect faces in the frame using Haar Cascade"""
+        """Enhanced face detection with better parameters"""
         gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+        
+        # Apply histogram equalization for better detection in varying lighting
+        gray = cv2.equalizeHist(gray)
+        
+        # Use multiple detection parameters for better accuracy
         faces = self.face_cascade.detectMultiScale(
             gray,
-            scaleFactor=1.1,
-            minNeighbors=5,
-            minSize=(30, 30)
+            scaleFactor=1.05,  # Smaller scale factor for more precise detection
+            minNeighbors=3,    # Lower threshold for better detection
+            minSize=(50, 50),  # Larger minimum size to avoid false positives
+            maxSize=(300, 300) # Maximum size constraint
         )
-        return faces
+        
+        # Filter faces by size and position for better quality
+        filtered_faces = []
+        for (x, y, w, h) in faces:
+            # Check if face is reasonably sized and positioned
+            if w > 50 and h > 50 and w < 300 and h < 300:
+                # Check if face is not too close to edges
+                if x > 20 and y > 20 and x + w < frame.shape[1] - 20 and y + h < frame.shape[0] - 20:
+                    filtered_faces.append((x, y, w, h))
+        
+        return filtered_faces
     
     def initialize_tracker(self, frame, bbox):
-        """Initialize the tracker with a detected face"""
-        # Use the correct tracker API for newer OpenCV versions
-        try:
-            # Try CSRT tracker first (more accurate but slower)
-            self.tracker = cv2.TrackerCSRT_create()
-        except AttributeError:
-            try:
-                # Fallback to KCF tracker
-                self.tracker = cv2.TrackerKCF_create()
-            except AttributeError:
-                # Final fallback to MOSSE tracker
-                self.tracker = cv2.TrackerMOSSE_create()
+        """Initialize the tracker with improved error handling"""
+        # Try multiple tracker types in order of preference
+        tracker_types = [
+            ('CSRT', lambda: cv2.TrackerCSRT_create()),
+            ('KCF', lambda: cv2.TrackerKCF_create()),
+            ('MOSSE', lambda: cv2.TrackerMOSSE_create())
+        ]
         
-        success = self.tracker.init(frame, bbox)
-        if success:
-            self.face_tracked = True
-            self.face_bbox = bbox
-            self.tracking_start_time = time.time()
-            print("Face tracking initialized!")
-        return success
+        for tracker_name, tracker_creator in tracker_types:
+            try:
+                self.tracker = tracker_creator()
+                success = self.tracker.init(frame, bbox)
+                if success:
+                    self.face_tracked = True
+                    self.face_bbox = bbox
+                    self.prev_bbox = bbox
+                    self.tracking_start_time = time.time()
+                    self.tracking_failures = 0
+                    print(f"Face tracking initialized with {tracker_name}!")
+                    return True
+            except Exception as e:
+                print(f"Failed to initialize {tracker_name} tracker: {e}")
+                continue
+        
+        print("Failed to initialize any tracker!")
+        return False
     
     def update_tracker(self, frame):
-        """Update the tracker and return the new bounding box"""
+        """Enhanced tracker update with smoothing and failure handling"""
         if self.tracker is None:
             return None, False
         
         success, bbox = self.tracker.update(frame)
-        if success:
+        
+        if success and bbox is not None:
+            # Apply smoothing to reduce jitter
+            if self.prev_bbox is not None:
+                smoothed_bbox = []
+                for i in range(4):
+                    smoothed_val = (self.smoothing_factor * bbox[i] + 
+                                  (1 - self.smoothing_factor) * self.prev_bbox[i])
+                    smoothed_bbox.append(smoothed_val)
+                bbox = tuple(smoothed_bbox)
+            
+            self.prev_bbox = bbox
             self.face_bbox = bbox
-        return bbox, success
+            self.tracking_failures = 0
+            return bbox, True
+        else:
+            self.tracking_failures += 1
+            return None, False
     
     def draw_face_info(self, frame, bbox, is_tracking=False):
-        """Draw face bounding box and information"""
+        """Enhanced visualization with more information"""
         if bbox is None:
             return
         
         x, y, w, h = [int(v) for v in bbox]
         
-        # Choose color based on tracking status
-        color = self.GREEN if is_tracking else self.RED
+        # Choose color based on tracking status and confidence
+        if is_tracking:
+            if self.tracking_failures == 0:
+                color = self.GREEN
+            elif self.tracking_failures < 3:
+                color = self.YELLOW
+            else:
+                color = self.RED
+        else:
+            color = self.BLUE
         
-        # Draw bounding box
-        cv2.rectangle(frame, (x, y), (x + w, y + h), color, 2)
+        # Draw bounding box with thickness based on confidence
+        thickness = 3 if is_tracking else 2
+        cv2.rectangle(frame, (x, y), (x + w, y + h), color, thickness)
         
         # Draw tracking status
         status = "TRACKING" if is_tracking else "DETECTED"
+        if is_tracking and self.tracking_failures > 0:
+            status += f" ({self.tracking_failures})"
+        
         cv2.putText(frame, status, (x, y - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.7, color, 2)
         
         # Draw face center point
         center_x, center_y = x + w // 2, y + h // 2
-        cv2.circle(frame, (center_x, center_y), 3, self.BLUE, -1)
+        cv2.circle(frame, (center_x, center_y), 4, self.BLUE, -1)
+        
+        # Draw face dimensions
+        cv2.putText(frame, f"{w}x{h}", (x, y + h + 20), 
+                   cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 1)
         
         # Draw tracking time if tracking
         if is_tracking and self.tracking_start_time:
@@ -104,11 +166,13 @@ class FaceTracker:
         self.face_tracked = False
         self.tracker = None
         self.face_bbox = None
+        self.prev_bbox = None
         self.tracking_start_time = None
+        self.tracking_failures = 0
         print("Tracking reset!")
     
     def run(self):
-        """Main tracking loop"""
+        """Enhanced main tracking loop"""
         frame_count = 0
         
         while True:
@@ -126,11 +190,14 @@ class FaceTracker:
             if self.face_tracked:
                 bbox, success = self.update_tracker(frame)
                 
-                # If tracking fails or we need to re-detect
-                if not success or frame_count % self.detection_interval == 0:
+                # If tracking fails too many times or we need to re-detect
+                if (not success and self.tracking_failures >= self.max_tracking_failures) or \
+                   frame_count % self.detection_interval == 0:
                     self.face_tracked = False
                     self.tracker = None
                     print("Tracking lost, re-detecting...")
+                elif success:
+                    self.draw_face_info(frame, bbox, is_tracking=True)
             
             # Detect faces if not currently tracking
             if not self.face_tracked:
@@ -150,16 +217,17 @@ class FaceTracker:
                     # Draw "No face detected" message
                     cv2.putText(frame, "No face detected", (10, 30), 
                                cv2.FONT_HERSHEY_SIMPLEX, 0.7, self.RED, 2)
-            else:
-                # Draw tracked face
-                self.draw_face_info(frame, self.face_bbox, is_tracking=True)
+            
+            # Draw frame info
+            cv2.putText(frame, f"Frame: {frame_count}", (10, 60), 
+                       cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
             
             # Draw instructions
             cv2.putText(frame, "Press 'q' to quit, 'r' to reset", (10, frame.shape[0] - 20), 
                        cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
             
             # Show the frame
-            cv2.imshow('Face Tracker', frame)
+            cv2.imshow('Enhanced Face Tracker', frame)
             
             # Handle key presses
             key = cv2.waitKey(1) & 0xFF
@@ -171,7 +239,7 @@ class FaceTracker:
         # Cleanup
         self.cap.release()
         cv2.destroyAllWindows()
-        print("Face tracker stopped!")
+        print("Enhanced face tracker stopped!")
 
 def main():
     """Main function to run the face tracker"""
