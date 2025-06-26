@@ -38,12 +38,12 @@ class FaceTracker:
         
         print("Enhanced Face Tracker initialized!")
         
-        # Check if any trackers are available
-        if not (hasattr(cv2, 'TrackerCSRT_create') or hasattr(cv2, 'TrackerKCF_create') or hasattr(cv2, 'TrackerMOSSE_create')):
-            print("No trackers available - using detection mode only")
+        # Test if trackers actually work
+        if not self.test_trackers():
+            print("No working trackers found - using detection mode only")
             self.use_tracking = False
         else:
-            print("Trackers available - tracking mode enabled")
+            print("Working trackers found - tracking mode enabled")
         
         print("Press 'q' to quit, 'r' to reset tracking")
     
@@ -89,6 +89,19 @@ class FaceTracker:
         
         print(f"Available trackers: {available_trackers}")
         
+        # Ensure bbox is in correct format (x, y, width, height) as integers
+        x, y, w, h = [int(v) for v in bbox]
+        bbox_tuple = (x, y, w, h)
+        
+        # Ensure bbox is within frame bounds
+        if x < 0 or y < 0 or x + w > frame.shape[1] or y + h > frame.shape[0]:
+            print(f"Bbox {bbox_tuple} is outside frame bounds, adjusting...")
+            x = max(0, min(x, frame.shape[1] - w))
+            y = max(0, min(y, frame.shape[0] - h))
+            bbox_tuple = (x, y, w, h)
+        
+        print(f"Initializing tracker with bbox: {bbox_tuple}")
+        
         # Try available trackers in order of preference
         for tracker_name in available_trackers:
             try:
@@ -100,21 +113,24 @@ class FaceTracker:
                     self.tracker = cv2.TrackerMOSSE_create()
                 
                 if self.tracker is not None:
-                    success = self.tracker.init(frame, bbox)
+                    # Initialize the tracker
+                    success = self.tracker.init(frame, bbox_tuple)
                     if success:
                         self.face_tracked = True
-                        self.face_bbox = bbox
-                        self.prev_bbox = bbox
+                        self.face_bbox = bbox_tuple
+                        self.prev_bbox = bbox_tuple
                         self.tracking_start_time = time.time()
                         self.tracking_failures = 0
                         print(f"Face tracking initialized with {tracker_name}!")
                         return True
                     else:
                         print(f"Failed to initialize {tracker_name} tracker")
+                        self.tracker = None
                 else:
                     print(f"Could not create {tracker_name} tracker")
             except Exception as e:
                 print(f"Error initializing {tracker_name} tracker: {e}")
+                self.tracker = None
                 continue
         
         print("No trackers available or all failed to initialize")
@@ -278,6 +294,51 @@ class FaceTracker:
         self.cap.release()
         cv2.destroyAllWindows()
         print("Enhanced face tracker stopped!")
+
+    def test_trackers(self):
+        """Test if any trackers can be initialized"""
+        print("Testing tracker availability...")
+        
+        # Create a simple test frame
+        test_frame = np.zeros((100, 100, 3), dtype=np.uint8)
+        test_bbox = (10, 10, 50, 50)
+        
+        available_trackers = []
+        
+        # Test for OpenCV 4.x trackers
+        if hasattr(cv2, 'TrackerCSRT_create'):
+            available_trackers.append('CSRT')
+        if hasattr(cv2, 'TrackerKCF_create'):
+            available_trackers.append('KCF')
+        if hasattr(cv2, 'TrackerMOSSE_create'):
+            available_trackers.append('MOSSE')
+        
+        print(f"Available trackers: {available_trackers}")
+        
+        # Test each tracker
+        for tracker_name in available_trackers:
+            try:
+                if tracker_name == 'CSRT':
+                    test_tracker = cv2.TrackerCSRT_create()
+                elif tracker_name == 'KCF':
+                    test_tracker = cv2.TrackerKCF_create()
+                elif tracker_name == 'MOSSE':
+                    test_tracker = cv2.TrackerMOSSE_create()
+                
+                if test_tracker is not None:
+                    success = test_tracker.init(test_frame, test_bbox)
+                    if success:
+                        print(f"✓ {tracker_name} tracker works")
+                        return True
+                    else:
+                        print(f"✗ {tracker_name} tracker failed to initialize")
+                else:
+                    print(f"✗ {tracker_name} tracker could not be created")
+            except Exception as e:
+                print(f"✗ {tracker_name} tracker error: {e}")
+        
+        print("No working trackers found")
+        return False
 
 def main():
     """Main function to run the face tracker"""
