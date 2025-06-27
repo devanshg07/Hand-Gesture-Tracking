@@ -2,6 +2,8 @@ import cv2
 import mediapipe as mp
 import time
 import numpy as np
+import pyautogui
+from collections import deque
 
 class HandTracker:
     def __init__(self, static_mode=False, max_hands=2, detection_confidence=0.5, tracking_confidence=0.5):
@@ -24,12 +26,18 @@ class HandTracker:
         self.results = None
         self.landmarks = []
         
+        # Gesture detection
+        self.last_gesture = None
+        self.gesture_cooldown = 0
+        
         # Colors for visualization
         self.colors = {
             'landmark': (255, 0, 255),      # Pink
             'connection': (0, 255, 0),      # Green
             'text': (255, 255, 255),        # White
-            'fps': (0, 255, 255)            # Yellow
+            'fps': (0, 255, 255),           # Yellow
+            'thumbs_up': (0, 255, 0),       # Green
+            'thumbs_down': (0, 0, 255)      # Red
         }
     
     def detect_hands(self, image, draw=True):
@@ -77,6 +85,100 @@ class HandTracker:
                         cv2.circle(image, (cx, cy), 5, self.colors['landmark'], cv2.FILLED)
         
         return landmarks
+    
+    def detect_thumbs_gesture(self, landmarks):
+        """
+        Detect thumbs up or thumbs down gesture
+        Returns: 'up', 'down', or None
+        """
+        if len(landmarks) < 21:
+            return None
+        
+        # Get key landmarks
+        thumb_tip = landmarks[4]      # Thumb tip
+        thumb_ip = landmarks[3]       # Thumb interphalangeal joint
+        thumb_mcp = landmarks[2]      # Thumb metacarpophalangeal joint
+        index_tip = landmarks[8]      # Index finger tip
+        index_pip = landmarks[6]      # Index finger pip
+        middle_tip = landmarks[12]    # Middle finger tip
+        middle_pip = landmarks[10]    # Middle finger pip
+        ring_tip = landmarks[16]      # Ring finger tip
+        ring_pip = landmarks[14]      # Ring finger pip
+        pinky_tip = landmarks[20]     # Pinky tip
+        pinky_pip = landmarks[18]     # Pinky pip
+        
+        # Check if fingers are extended (except thumb)
+        fingers_extended = []
+        
+        # Index finger
+        fingers_extended.append(index_tip[2] < index_pip[2])
+        # Middle finger
+        fingers_extended.append(middle_tip[2] < middle_pip[2])
+        # Ring finger
+        fingers_extended.append(ring_tip[2] < ring_pip[2])
+        # Pinky
+        fingers_extended.append(pinky_tip[2] < pinky_pip[2])
+        
+        # Check thumb position relative to index finger
+        thumb_above_index = thumb_tip[2] < index_tip[2]
+        thumb_below_index = thumb_tip[2] > index_tip[2]
+        
+        # Thumbs up: all fingers extended, thumb above index
+        if all(fingers_extended) and thumb_above_index:
+            return 'up'
+        
+        # Thumbs down: all fingers extended, thumb below index
+        if all(fingers_extended) and thumb_below_index:
+            return 'down'
+        
+        return None
+    
+    def process_gesture(self, image):
+        """
+        Process gesture and simulate key press
+        """
+        if self.gesture_cooldown > 0:
+            self.gesture_cooldown -= 1
+            return None
+        
+        landmarks = self.get_landmarks(image, hand_no=0, draw_points=False)
+        if not landmarks:
+            return None
+        
+        gesture = self.detect_thumbs_gesture(landmarks)
+        
+        if gesture and gesture != self.last_gesture:
+            self.last_gesture = gesture
+            self.gesture_cooldown = 30  # Prevent rapid repeated presses
+            
+            # Simulate key press
+            if gesture == 'up':
+                pyautogui.press('up')
+                return 'UP ARROW'
+            elif gesture == 'down':
+                pyautogui.press('down')
+                return 'DOWN ARROW'
+        
+        return None
+    
+    def draw_gesture_info(self, image, gesture_text):
+        """
+        Draw gesture information on the image
+        """
+        if gesture_text:
+            # Draw gesture text
+            cv2.putText(image, f"Pressed: {gesture_text}", (10, image.shape[0] - 60), 
+                       cv2.FONT_HERSHEY_SIMPLEX, 1, self.colors['thumbs_up'], 3)
+            
+            # Draw gesture indicator
+            center_x, center_y = image.shape[1] // 2, image.shape[0] // 2
+            
+            if gesture_text == 'UP ARROW':
+                cv2.arrowedLine(image, (center_x, center_y + 50), (center_x, center_y - 50), 
+                               self.colors['thumbs_up'], 5, tipLength=0.3)
+            elif gesture_text == 'DOWN ARROW':
+                cv2.arrowedLine(image, (center_x, center_y - 50), (center_x, center_y + 50), 
+                               self.colors['thumbs_down'], 5, tipLength=0.3)
     
     def get_hand_count(self):
         """
@@ -238,6 +340,11 @@ class HandAndFaceTracker:
         """
         # Detect and draw hands
         image = self.hand_tracker.detect_hands(image, draw=True)
+        
+        # Detect gesture
+        gesture = self.hand_tracker.process_gesture(image)
+        if gesture:
+            self.hand_tracker.draw_gesture_info(image, gesture)
         
         # Detect and draw faces
         self.face_tracker.detect_faces_mediapipe(image, draw=True)
