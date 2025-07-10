@@ -319,19 +319,16 @@ class HandTrackerApp:
         # Detect and draw hands
         image = self.hand_tracker.detect_hands(image, draw=True)
         
-        # Get landmarks for finger counting and debug info
+        # Get landmarks for finger counting
         landmarks = self.hand_tracker.get_landmarks(image, hand_no=0, draw_points=False)
         if landmarks:
             # Count extended fingers
             finger_count, _ = self.hand_tracker.count_extended_fingers(landmarks)
-            
-            # Draw finger count in top left
-            self.hand_tracker.draw_finger_count(image, finger_count)
-            
-            # Detect gesture
-            gesture = self.hand_tracker.process_gesture(image)
-            if gesture:
-                self.hand_tracker.draw_arrow_next_to_hand(image, gesture, landmarks)
+        
+        # Detect gesture
+        gesture = self.hand_tracker.process_gesture(image)
+        if gesture:
+            self.hand_tracker.draw_arrow_next_to_hand(image, gesture, landmarks)
         
         return image
     
@@ -351,14 +348,18 @@ class HandTrackerApp:
     
     def draw_info(self, image, fps=None, hand_count=None, finger_count=None):
         """
-        Draw only hand and finger count in the top left
+        Draw only hand and finger count in the top left, same color, size, and font
         """
-        y_offset = 30
+        y_offset = 40
+        color = (0, 255, 255)  # Cyan
+        font = cv2.FONT_HERSHEY_SIMPLEX
+        font_scale = 1.2
+        thickness = 3
         if hand_count is not None:
-            cv2.putText(image, f"Hands: {hand_count}", (10, y_offset), cv2.FONT_HERSHEY_SIMPLEX, 0.9, (255, 0, 255), 2)
-            y_offset += 30
+            cv2.putText(image, f"Hands: {hand_count}", (10, y_offset), font, font_scale, color, thickness)
+            y_offset += 40
         if finger_count is not None:
-            cv2.putText(image, f"FINGERS: {finger_count}", (10, y_offset), cv2.FONT_HERSHEY_SIMPLEX, 1.2, (0, 255, 255), 3)
+            cv2.putText(image, f"FINGERS: {finger_count}", (10, y_offset), font, font_scale, color, thickness)
 
 def main():
     """
