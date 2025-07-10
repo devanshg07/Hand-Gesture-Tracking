@@ -352,12 +352,52 @@ class HandTracker:
 
     def draw_finger_count(self, image, finger_count):
         """
-        Draw finger count in the top left corner
+        Draw finger count everywhere on the screen with different styles
         """
-        # Draw finger count with large, prominent text in top left
+        height, width = image.shape[:2]
+        
+        # Create a grid of finger count displays
+        for row in range(4):
+            for col in range(6):
+                x = (width // 6) * col + 20
+                y = (height // 4) * row + 40
+                
+                # Different colors for variety
+                colors = [(0, 255, 255), (255, 0, 255), (255, 255, 0), (0, 255, 0), (255, 0, 0), (0, 0, 255)]
+                color = colors[(row + col) % len(colors)]
+                
+                # Different font sizes
+                font_sizes = [0.8, 1.0, 1.2, 1.5]
+                font_size = font_sizes[row % len(font_sizes)]
+                
+                # Draw the finger count
+                cv2.putText(image, f"{finger_count}", 
+                           (x, y), 
+                           cv2.FONT_HERSHEY_SIMPLEX, font_size, color, 2)
+        
+        # Giant center display
         cv2.putText(image, f"FINGERS: {finger_count}", 
-                   (10, 50), 
-                   cv2.FONT_HERSHEY_SIMPLEX, 1.2, (0, 255, 255), 3)
+                   (width // 2 - 150, height // 2), 
+                   cv2.FONT_HERSHEY_SIMPLEX, 2.0, (255, 255, 255), 5)
+        
+        # Border displays
+        border_positions = [
+            (10, 30), (width//2-50, 30), (width-100, 30),  # Top
+            (10, height-30), (width//2-50, height-30), (width-100, height-30),  # Bottom
+            (10, height//2), (width-100, height//2),  # Left and right middle
+        ]
+        
+        for x, y in border_positions:
+            cv2.putText(image, f"FINGERS: {finger_count}", 
+                       (x, y), 
+                       cv2.FONT_HERSHEY_SIMPLEX, 1.0, (0, 255, 255), 3)
+        
+        # Corner displays with different styles
+        corners = [(10, 50), (width-150, 50), (10, height-50), (width-150, height-50)]
+        for i, (x, y) in enumerate(corners):
+            cv2.putText(image, f"FINGERS: {finger_count}", 
+                       (x, y), 
+                       cv2.FONT_HERSHEY_SIMPLEX, 1.3, (255, 255, 255), 4)
 
 class HandTrackerApp:
     def __init__(self):
