@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Hand & Finger Counter</title>
+  <style>
+    body { background: #111; color: #0ff; font-family: sans-serif; text-align: center; }
+    #video { border: 2px solid #0ff; border-radius: 8px; }
+    #counter { font-size: 2em; margin-top: 1em; }
+  </style>
+</head>
+<body>
+  <h1>Hand & Finger Counter</h1>
+  <video id="video" width="480" height="360" autoplay></video>
+  <div id="counter">Hands: 0 | Fingers: 0</div>
+  <script>
+    const video = document.getElementById('video');
+    const counter = document.getElementById('counter');
+    let lastFingers = null;
+
+    // Ask for webcam
+    navigator.mediaDevices.getUserMedia({ video: true }).then(stream => {
+      video.srcObject = stream;
+    });
+
+    // Capture and send frame every 500ms
+    setInterval(() => {
+      if (video.readyState === 4) {
+        const canvas = document.createElement('canvas');
+        canvas.width = video.videoWidth;
+        canvas.height = video.videoHeight;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+        canvas.toBlob(blob => {
+          const formData = new FormData();
+          formData.append('frame', blob, 'frame.jpg');
+          fetch('/detect', { method: 'POST', body: formData })
+            .then(res => res.json())
+            .then(data => {
+              counter.textContent = `Hands: ${data.hands} | Fingers: ${data.fingers}`;
+              // Speak only if finger count changes
+              if (data.fingers !== lastFingers) {
+                window.speechSynthesis.cancel();
+                const utter = new SpeechSynthesisUtterance(data.fingers.toString());
+                window.speechSynthesis.speak(utter);
+                lastFingers = data.fingers;
+              }
+            });
+        }, 'image/jpeg');
+      }
+    }, 500);
+  </script>
+</body>
+</html> 
