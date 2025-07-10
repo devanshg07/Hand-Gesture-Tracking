@@ -2,6 +2,8 @@
 venv/
 env/
 ENV/
+.venv/
+env.bak/    
 
 # Python
 __pycache__/

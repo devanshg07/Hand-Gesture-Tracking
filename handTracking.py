@@ -2,8 +2,6 @@ import cv2
 import mediapipe as mp
 import time
 import numpy as np
-import pyautogui
-from collections import deque
 
 class HandTracker:
     def __init__(self, static_mode=False, max_hands=2, detection_confidence=0.5, tracking_confidence=0.5):
@@ -107,21 +105,21 @@ class HandTracker:
         pinky_tip = landmarks[20]     # Pinky tip
         pinky_pip = landmarks[18]     # Pinky pip
         
-        # Check if fingers are extended (except thumb)
+        # Check if fingers are extended (except thumb) - more lenient
         fingers_extended = []
         
-        # Index finger
-        fingers_extended.append(index_tip[2] < index_pip[2])
-        # Middle finger
-        fingers_extended.append(middle_tip[2] < middle_pip[2])
-        # Ring finger
-        fingers_extended.append(ring_tip[2] < ring_pip[2])
-        # Pinky
-        fingers_extended.append(pinky_tip[2] < pinky_pip[2])
+        # Index finger - more lenient threshold
+        fingers_extended.append(index_tip[2] < index_pip[2] - 10)
+        # Middle finger - more lenient threshold
+        fingers_extended.append(middle_tip[2] < middle_pip[2] - 10)
+        # Ring finger - more lenient threshold
+        fingers_extended.append(ring_tip[2] < ring_pip[2] - 10)
+        # Pinky - more lenient threshold
+        fingers_extended.append(pinky_tip[2] < pinky_pip[2] - 10)
         
-        # Check thumb position relative to index finger
-        thumb_above_index = thumb_tip[2] < index_tip[2]
-        thumb_below_index = thumb_tip[2] > index_tip[2]
+        # Check thumb position relative to index finger - more lenient
+        thumb_above_index = thumb_tip[2] < index_tip[2] - 20
+        thumb_below_index = thumb_tip[2] > index_tip[2] + 20
         
         # Thumbs up: all fingers extended, thumb above index
         if all(fingers_extended) and thumb_above_index:
@@ -135,7 +133,7 @@ class HandTracker:
     
     def process_gesture(self, image):
         """
-        Process gesture and simulate key press
+        Process gesture and draw arrow next to hand
         """
         if self.gesture_cooldown > 0:
             self.gesture_cooldown -= 1
@@ -149,36 +147,54 @@ class HandTracker:
         
         if gesture and gesture != self.last_gesture:
             self.last_gesture = gesture
-            self.gesture_cooldown = 30  # Prevent rapid repeated presses
-            
-            # Simulate key press
-            if gesture == 'up':
-                pyautogui.press('up')
-                return 'UP ARROW'
-            elif gesture == 'down':
-                pyautogui.press('down')
-                return 'DOWN ARROW'
+            self.gesture_cooldown = 30  # Prevent rapid repeated detections
+            return gesture
         
         return None
     
-    def draw_gesture_info(self, image, gesture_text):
+    def draw_arrow_next_to_hand(self, image, gesture, landmarks):
         """
-        Draw gesture information on the image
+        Draw arrow next to the detected hand
         """
-        if gesture_text:
+        if not gesture or not landmarks:
+            return
+        
+        # Get hand position (use wrist as reference)
+        wrist = landmarks[0]
+        hand_x, hand_y = wrist[1], wrist[2]
+        
+        # Calculate arrow position (to the right of the hand)
+        arrow_x = hand_x + 100
+        arrow_y = hand_y
+        
+        # Ensure arrow stays within image bounds
+        arrow_x = min(arrow_x, image.shape[1] - 50)
+        arrow_x = max(arrow_x, 50)
+        arrow_y = min(arrow_y, image.shape[0] - 50)
+        arrow_y = max(arrow_y, 50)
+        
+        # Draw arrow based on gesture
+        if gesture == 'up':
+            # Draw up arrow
+            cv2.arrowedLine(image, 
+                           (arrow_x, arrow_y + 30), 
+                           (arrow_x, arrow_y - 30), 
+                           self.colors['thumbs_up'], 5, tipLength=0.3)
+            
             # Draw gesture text
-            cv2.putText(image, f"Pressed: {gesture_text}", (10, image.shape[0] - 60), 
-                       cv2.FONT_HERSHEY_SIMPLEX, 1, self.colors['thumbs_up'], 3)
+            cv2.putText(image, "THUMBS UP", (arrow_x - 40, arrow_y + 60), 
+                       cv2.FONT_HERSHEY_SIMPLEX, 0.7, self.colors['thumbs_up'], 2)
             
-            # Draw gesture indicator
-            center_x, center_y = image.shape[1] // 2, image.shape[0] // 2
+        elif gesture == 'down':
+            # Draw down arrow
+            cv2.arrowedLine(image, 
+                           (arrow_x, arrow_y - 30), 
+                           (arrow_x, arrow_y + 30), 
+                           self.colors['thumbs_down'], 5, tipLength=0.3)
             
-            if gesture_text == 'UP ARROW':
-                cv2.arrowedLine(image, (center_x, center_y + 50), (center_x, center_y - 50), 
-                               self.colors['thumbs_up'], 5, tipLength=0.3)
-            elif gesture_text == 'DOWN ARROW':
-                cv2.arrowedLine(image, (center_x, center_y - 50), (center_x, center_y + 50), 
-                               self.colors['thumbs_down'], 5, tipLength=0.3)
+            # Draw gesture text
+            cv2.putText(image, "THUMBS DOWN", (arrow_x - 50, arrow_y + 60), 
+                       cv2.FONT_HERSHEY_SIMPLEX, 0.7, self.colors['thumbs_down'], 2)
     
     def get_hand_count(self):
         """
@@ -213,108 +229,140 @@ class HandTracker:
         
         return None
 
-class FaceTracker:
-    def __init__(self):
+    def draw_debug_info(self, image, landmarks):
         """
-        Initialize face detection and tracking
+        Draw debug information to help understand gesture detection
         """
-        # Load pre-trained face detection model
-        self.face_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_frontalface_default.xml')
+        if not landmarks or len(landmarks) < 21:
+            return
         
-        # Initialize MediaPipe face detection for better accuracy
-        self.mp_face_detection = mp.solutions.face_detection
-        self.face_detection = self.mp_face_detection.FaceDetection(
-            model_selection=1,  # 0 for short-range, 1 for full-range
-            min_detection_confidence=0.5
-        )
+        # Get key landmarks
+        thumb_tip = landmarks[4]
+        index_tip = landmarks[8]
+        index_pip = landmarks[6]
+        middle_tip = landmarks[12]
+        middle_pip = landmarks[10]
+        ring_tip = landmarks[16]
+        ring_pip = landmarks[14]
+        pinky_tip = landmarks[20]
+        pinky_pip = landmarks[18]
         
-        # Colors for visualization
-        self.colors = {
-            'face_bbox': (0, 255, 0),       # Green
-            'face_landmarks': (255, 0, 0),  # Blue
-            'text': (255, 255, 255)         # White
-        }
+        # Draw finger extension status
+        y_offset = 150
         
-        # Tracking variables
-        self.face_tracked = False
-        self.tracker = None
-        self.face_bbox = None
-        self.tracking_failures = 0
-        self.max_tracking_failures = 10
-    
-    def detect_faces_mediapipe(self, image, draw=True):
-        """
-        Detect faces using MediaPipe (more accurate)
-        """
-        # Convert BGR to RGB
-        image_rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+        # Index finger
+        index_extended = index_tip[2] < index_pip[2] - 10
+        color = (0, 255, 0) if index_extended else (0, 0, 255)
+        cv2.putText(image, f"Index: {'EXTENDED' if index_extended else 'BENT'}", 
+                   (10, y_offset), cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 1)
+        y_offset += 20
         
-        # Process the image
-        results = self.face_detection.process(image_rgb)
+        # Middle finger
+        middle_extended = middle_tip[2] < middle_pip[2] - 10
+        color = (0, 255, 0) if middle_extended else (0, 0, 255)
+        cv2.putText(image, f"Middle: {'EXTENDED' if middle_extended else 'BENT'}", 
+                   (10, y_offset), cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 1)
+        y_offset += 20
         
-        faces = []
-        if results.detections:
-            for detection in results.detections:
-                bboxC = detection.location_data.relative_bounding_box
-                ih, iw, _ = image.shape
-                x, y, w, h = int(bboxC.xmin * iw), int(bboxC.ymin * ih), \
-                            int(bboxC.width * iw), int(bboxC.height * ih)
-                
-                faces.append((x, y, w, h))
-                
-                if draw:
-                    # Draw bounding box
-                    cv2.rectangle(image, (x, y), (x + w, y + h), self.colors['face_bbox'], 2)
-                    
-                    # Draw confidence score
-                    confidence = detection.score[0]
-                    cv2.putText(image, f'{confidence:.2f}', (x, y - 10),
-                               cv2.FONT_HERSHEY_SIMPLEX, 0.5, self.colors['text'], 1)
+        # Ring finger
+        ring_extended = ring_tip[2] < ring_pip[2] - 10
+        color = (0, 255, 0) if ring_extended else (0, 0, 255)
+        cv2.putText(image, f"Ring: {'EXTENDED' if ring_extended else 'BENT'}", 
+                   (10, y_offset), cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 1)
+        y_offset += 20
         
-        return faces
-    
-    def detect_faces_opencv(self, image, draw=True):
-        """
-        Detect faces using OpenCV (fallback method)
-        """
-        gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-        gray = cv2.equalizeHist(gray)
+        # Pinky
+        pinky_extended = pinky_tip[2] < pinky_pip[2] - 10
+        color = (0, 255, 0) if pinky_extended else (0, 0, 255)
+        cv2.putText(image, f"Pinky: {'EXTENDED' if pinky_extended else 'BENT'}", 
+                   (10, y_offset), cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 1)
+        y_offset += 20
         
-        faces = self.face_cascade.detectMultiScale(
-            gray,
-            scaleFactor=1.1,
-            minNeighbors=5,
-            minSize=(30, 30)
-        )
+        # Thumb position
+        thumb_above = thumb_tip[2] < index_tip[2] - 20
+        thumb_below = thumb_tip[2] > index_tip[2] + 20
+        thumb_status = "ABOVE" if thumb_above else "BELOW" if thumb_below else "NEUTRAL"
+        color = (0, 255, 0) if thumb_above or thumb_below else (255, 255, 0)
+        cv2.putText(image, f"Thumb: {thumb_status}", 
+                   (10, y_offset), cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 1)
+        y_offset += 20
         
-        if draw:
-            for (x, y, w, h) in faces:
-                cv2.rectangle(image, (x, y), (x + w, y + h), self.colors['face_bbox'], 2)
-        
-        return faces
-    
-    def get_face_count(self, image):
-        """
-        Get the number of faces detected
-        """
-        faces = self.detect_faces_mediapipe(image, draw=False)
-        return len(faces)
-    
-    def get_largest_face(self, image):
-        """
-        Get the largest (closest) face detected
-        """
-        faces = self.detect_faces_mediapipe(image, draw=False)
-        if faces:
-            # Return the face with the largest area
-            largest_face = max(faces, key=lambda x: x[2] * x[3])
-            return largest_face
-        return None
+        # All fingers extended status
+        all_extended = all([index_extended, middle_extended, ring_extended, pinky_extended])
+        color = (0, 255, 0) if all_extended else (0, 0, 255)
+        cv2.putText(image, f"All Extended: {'YES' if all_extended else 'NO'}", 
+                   (10, y_offset), cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 1)
 
-class HandAndFaceTracker:
+    def count_extended_fingers(self, landmarks):
+        """
+        Count the number of extended fingers
+        Returns: int (0-5) representing number of extended fingers
+        """
+        if len(landmarks) < 21:
+            return 0
+        
+        # Get key landmarks for each finger
+        # Thumb landmarks
+        thumb_tip = landmarks[4]      # Thumb tip
+        thumb_ip = landmarks[3]       # Thumb interphalangeal joint
+        
+        # Index finger landmarks
+        index_tip = landmarks[8]      # Index finger tip
+        index_pip = landmarks[6]      # Index finger pip
+        
+        # Middle finger landmarks
+        middle_tip = landmarks[12]    # Middle finger tip
+        middle_pip = landmarks[10]    # Middle finger pip
+        
+        # Ring finger landmarks
+        ring_tip = landmarks[16]      # Ring finger tip
+        ring_pip = landmarks[14]      # Ring finger pip
+        
+        # Pinky landmarks
+        pinky_tip = landmarks[20]     # Pinky tip
+        pinky_pip = landmarks[18]     # Pinky pip
+        
+        # Check if each finger is extended
+        fingers_extended = []
+        
+        # Thumb - check if tip is above the interphalangeal joint
+        thumb_extended = thumb_tip[2] < thumb_ip[2] - 10
+        fingers_extended.append(thumb_extended)
+        
+        # Index finger - check if tip is above the pip joint
+        index_extended = index_tip[2] < index_pip[2] - 10
+        fingers_extended.append(index_extended)
+        
+        # Middle finger - check if tip is above the pip joint
+        middle_extended = middle_tip[2] < middle_pip[2] - 10
+        fingers_extended.append(middle_extended)
+        
+        # Ring finger - check if tip is above the pip joint
+        ring_extended = ring_tip[2] < ring_pip[2] - 10
+        fingers_extended.append(ring_extended)
+        
+        # Pinky - check if tip is above the pip joint
+        pinky_extended = pinky_tip[2] < pinky_pip[2] - 10
+        fingers_extended.append(pinky_extended)
+        
+        # Count extended fingers
+        extended_count = sum(fingers_extended)
+        
+        return extended_count, fingers_extended
+
+    def draw_finger_count(self, image, finger_count):
+        """
+        Draw finger count in the top left corner
+        """
+        # Draw finger count with large, prominent text in top left
+        cv2.putText(image, f"FINGERS: {finger_count}", 
+                   (10, 50), 
+                   cv2.FONT_HERSHEY_SIMPLEX, 1.2, (0, 255, 255), 3)
+
+class HandTrackerApp:
     def __init__(self):
         """
-        Combined hand and face tracking system
+        Hand tracking application
         """
         self.hand_tracker = HandTracker(
             static_mode=False,
@@ -323,12 +371,9 @@ class HandAndFaceTracker:
             tracking_confidence=0.5
         )
         
-        self.face_tracker = FaceTracker()
-        
-        # Colors for combined visualization
+        # Colors for visualization
         self.colors = {
             'hand': (255, 0, 255),      # Pink
-            'face': (0, 255, 0),        # Green
             'text': (255, 255, 255),    # White
             'fps': (0, 255, 255),       # Yellow
             'info': (255, 255, 0)       # Cyan
@@ -336,31 +381,45 @@ class HandAndFaceTracker:
     
     def process_frame(self, image):
         """
-        Process frame for both hand and face detection
+        Process frame for hand detection and finger counting
         """
         # Detect and draw hands
         image = self.hand_tracker.detect_hands(image, draw=True)
         
+        # Get landmarks for finger counting and debug info
+        landmarks = self.hand_tracker.get_landmarks(image, hand_no=0, draw_points=False)
+        if landmarks:
+            # Count extended fingers
+            finger_count, fingers_extended = self.hand_tracker.count_extended_fingers(landmarks)
+            
+            # Draw finger count in top left
+            self.hand_tracker.draw_finger_count(image, finger_count)
+            
+            # Draw debug information
+            self.hand_tracker.draw_debug_info(image, landmarks)
+        
         # Detect gesture
         gesture = self.hand_tracker.process_gesture(image)
         if gesture:
-            self.hand_tracker.draw_gesture_info(image, gesture)
-        
-        # Detect and draw faces
-        self.face_tracker.detect_faces_mediapipe(image, draw=True)
+            self.hand_tracker.draw_arrow_next_to_hand(image, gesture, landmarks)
         
         return image
     
     def get_counts(self, image):
         """
-        Get counts of hands and faces detected
+        Get counts of hands and fingers detected
         """
         hand_count = self.hand_tracker.get_hand_count()
-        face_count = self.face_tracker.get_face_count(image)
         
-        return hand_count, face_count
+        # Get finger count for the first detected hand
+        finger_count = 0
+        landmarks = self.hand_tracker.get_landmarks(image, hand_no=0, draw_points=False)
+        if landmarks:
+            finger_count, _ = self.hand_tracker.count_extended_fingers(landmarks)
+        
+        return hand_count, finger_count
     
-    def draw_info(self, image, fps=None, hand_count=None, face_count=None):
+    def draw_info(self, image, fps=None, hand_count=None, finger_count=None):
         """
         Draw information on the image
         """
@@ -378,19 +437,13 @@ class HandAndFaceTracker:
                        cv2.FONT_HERSHEY_SIMPLEX, 0.7, self.colors['hand'], 2)
             y_offset += 30
         
-        # Draw face count
-        if face_count is not None:
-            cv2.putText(image, f"Faces: {face_count}", (10, y_offset), 
-                       cv2.FONT_HERSHEY_SIMPLEX, 0.7, self.colors['face'], 2)
-            y_offset += 30
-        
         # Draw instructions
         cv2.putText(image, "Press 'q' to quit", (10, image.shape[0] - 20), 
                    cv2.FONT_HERSHEY_SIMPLEX, 0.5, self.colors['text'], 1)
 
 def main():
     """
-    Main function to run hand and face tracking
+    Main function to run hand tracking and finger counting
     """
     # Initialize camera - try multiple indices
     cap = None
@@ -413,8 +466,8 @@ def main():
     cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
     cap.set(cv2.CAP_PROP_FPS, 30)
     
-    # Initialize combined tracker
-    tracker = HandAndFaceTracker()
+    # Initialize hand tracker app
+    tracker = HandTrackerApp()
     
     # FPS calculation variables
     prev_time = 0
@@ -430,11 +483,11 @@ def main():
             # Flip frame horizontally for more intuitive experience
             frame = cv2.flip(frame, 1)
             
-            # Process frame for hand and face detection
+            # Process frame for hand detection and finger counting
             frame = tracker.process_frame(frame)
             
             # Get counts
-            hand_count, face_count = tracker.get_counts(frame)
+            hand_count, finger_count = tracker.get_counts(frame)
             
             # Calculate FPS
             curr_time = time.time()
@@ -442,10 +495,10 @@ def main():
             prev_time = curr_time
             
             # Draw information
-            tracker.draw_info(frame, fps=fps, hand_count=hand_count, face_count=face_count)
+            tracker.draw_info(frame, fps=fps, hand_count=hand_count, finger_count=finger_count)
             
             # Show frame
-            cv2.imshow("Hand & Face Tracking", frame)
+            cv2.imshow("Hand Tracking & Finger Counting", frame)
             
             # Handle key presses and window close
             key = cv2.waitKey(1) & 0xFF
@@ -453,7 +506,7 @@ def main():
                 break
             
             # Check if window was closed with X button
-            if cv2.getWindowProperty("Hand & Face Tracking", cv2.WND_PROP_VISIBLE) < 1:
+            if cv2.getWindowProperty("Hand Tracking & Finger Counting", cv2.WND_PROP_VISIBLE) < 1:
                 break
         
     except KeyboardInterrupt:
