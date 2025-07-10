@@ -2,6 +2,7 @@ import cv2
 import mediapipe as mp
 import time
 import numpy as np
+import pyttsx3
 
 class HandTracker:
     def __init__(self, static_mode=False, max_hands=2, detection_confidence=0.5, tracking_confidence=0.5):
@@ -363,7 +364,7 @@ class HandTrackerApp:
 
 def main():
     """
-    Main function to run hand tracking and finger counting
+    Main function to run hand tracking and finger counting with speech feedback
     """
     # Initialize camera - try multiple indices
     cap = None
@@ -389,6 +390,14 @@ def main():
     # Initialize hand tracker app
     tracker = HandTrackerApp()
     
+    # Initialize speech engine
+    engine = pyttsx3.init()
+    engine.setProperty('rate', 150)
+    engine.setProperty('volume', 1.0)
+    last_spoken_fingers = None
+    last_spoken_time = 0
+    cooldown = 0.5  # seconds
+    
     # FPS calculation variables
     prev_time = 0
     curr_time = 0
@@ -408,6 +417,13 @@ def main():
             
             # Get counts
             hand_count, finger_count = tracker.get_counts(frame)
+            now = time.time()
+            # SPEECH: Only speak if finger count changes and cooldown passed
+            if finger_count is not None and finger_count != last_spoken_fingers and (now - last_spoken_time) > cooldown:
+                engine.say(str(finger_count))
+                engine.runAndWait()
+                last_spoken_fingers = finger_count
+                last_spoken_time = now
             
             # Calculate FPS
             curr_time = time.time()

@@ -7,3 +7,4 @@ mmcv
 openpifpaf
 mediapipe
 pyautogui 
+pyttsx3 
