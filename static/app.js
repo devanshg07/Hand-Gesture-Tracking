@@ -1,5 +1,6 @@
 const video = document.getElementById('video');
-const counter = document.getElementById('counter');
+const handsCount = document.getElementById('hands-count');
+const fingersCount = document.getElementById('fingers-count');
 const speechIcon = document.getElementById('speech-icon');
 const muteBtn = document.getElementById('mute-btn');
 let lastFingers = null, lastHands = null;
@@ -15,9 +16,12 @@ navigator.mediaDevices.getUserMedia({ video: true }).then(stream => {
 
 // Animate counter on change
 function animateCounter() {
-  counter.classList.remove('counter-animate');
-  void counter.offsetWidth; // trigger reflow
-  counter.classList.add('counter-animate');
+  handsCount.classList.remove('counter-animate');
+  fingersCount.classList.remove('counter-animate');
+  void handsCount.offsetWidth; // trigger reflow
+  void fingersCount.offsetWidth;
+  handsCount.classList.add('counter-animate');
+  fingersCount.classList.add('counter-animate');
 }
 
 // Show toast for errors
@@ -34,7 +38,7 @@ function showToast(msg) {
   toast.style.borderRadius = '12px';
   toast.style.fontSize = '1.1em';
   toast.style.zIndex = 1000;
-  toast.style.boxShadow = '0 2px 16px #00fff7aa';
+  toast.style.boxShadow = '0 2px 16px #00bfffaa';
   document.body.appendChild(toast);
   setTimeout(() => toast.remove(), 3500);
 }
@@ -71,7 +75,8 @@ setInterval(() => {
           const fingers = data.fingers;
           // Only update and animate if changed
           if (hands !== lastHands || fingers !== lastFingers) {
-            counter.textContent = `Hands: ${hands} | Fingers: ${fingers}`;
+            handsCount.textContent = hands;
+            fingersCount.textContent = fingers;
             animateCounter();
             // Speak only if finger count changes and not muted
             if (fingers !== lastFingers && !isMuted) {
