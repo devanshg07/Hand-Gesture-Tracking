@@ -7,7 +7,7 @@ app = Flask(__name__)
 tracker = HandTrackerApp()
 
 @app.route('/')
-def index():
+def index():#function
     return render_template('index.html')
 
 @app.route('/detect', methods=['POST'])
