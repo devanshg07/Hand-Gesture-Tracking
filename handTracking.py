@@ -229,70 +229,6 @@ class HandTracker:
         
         return None
 
-    def draw_debug_info(self, image, landmarks):
-        """
-        Draw debug information to help understand gesture detection
-        """
-        if not landmarks or len(landmarks) < 21:
-            return
-        
-        # Get key landmarks
-        thumb_tip = landmarks[4]
-        index_tip = landmarks[8]
-        index_pip = landmarks[6]
-        middle_tip = landmarks[12]
-        middle_pip = landmarks[10]
-        ring_tip = landmarks[16]
-        ring_pip = landmarks[14]
-        pinky_tip = landmarks[20]
-        pinky_pip = landmarks[18]
-        
-        # Draw finger extension status
-        y_offset = 150
-        
-        # Index finger
-        index_extended = index_tip[2] < index_pip[2] - 10
-        color = (0, 255, 0) if index_extended else (0, 0, 255)
-        cv2.putText(image, f"Index: {'EXTENDED' if index_extended else 'BENT'}", 
-                   (10, y_offset), cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 1)
-        y_offset += 20
-        
-        # Middle finger
-        middle_extended = middle_tip[2] < middle_pip[2] - 10
-        color = (0, 255, 0) if middle_extended else (0, 0, 255)
-        cv2.putText(image, f"Middle: {'EXTENDED' if middle_extended else 'BENT'}", 
-                   (10, y_offset), cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 1)
-        y_offset += 20
-        
-        # Ring finger
-        ring_extended = ring_tip[2] < ring_pip[2] - 10
-        color = (0, 255, 0) if ring_extended else (0, 0, 255)
-        cv2.putText(image, f"Ring: {'EXTENDED' if ring_extended else 'BENT'}", 
-                   (10, y_offset), cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 1)
-        y_offset += 20
-        
-        # Pinky
-        pinky_extended = pinky_tip[2] < pinky_pip[2] - 10
-        color = (0, 255, 0) if pinky_extended else (0, 0, 255)
-        cv2.putText(image, f"Pinky: {'EXTENDED' if pinky_extended else 'BENT'}", 
-                   (10, y_offset), cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 1)
-        y_offset += 20
-        
-        # Thumb position
-        thumb_above = thumb_tip[2] < index_tip[2] - 20
-        thumb_below = thumb_tip[2] > index_tip[2] + 20
-        thumb_status = "ABOVE" if thumb_above else "BELOW" if thumb_below else "NEUTRAL"
-        color = (0, 255, 0) if thumb_above or thumb_below else (255, 255, 0)
-        cv2.putText(image, f"Thumb: {thumb_status}", 
-                   (10, y_offset), cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 1)
-        y_offset += 20
-        
-        # All fingers extended status
-        all_extended = all([index_extended, middle_extended, ring_extended, pinky_extended])
-        color = (0, 255, 0) if all_extended else (0, 0, 255)
-        cv2.putText(image, f"All Extended: {'YES' if all_extended else 'NO'}", 
-                   (10, y_offset), cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 1)
-
     def count_extended_fingers(self, landmarks):
         """
         Count the number of extended fingers
@@ -352,52 +288,9 @@ class HandTracker:
 
     def draw_finger_count(self, image, finger_count):
         """
-        Draw finger count everywhere on the screen with different styles
+        Draw finger count in the top left corner only
         """
-        height, width = image.shape[:2]
-        
-        # Create a grid of finger count displays
-        for row in range(4):
-            for col in range(6):
-                x = (width // 6) * col + 20
-                y = (height // 4) * row + 40
-                
-                # Different colors for variety
-                colors = [(0, 255, 255), (255, 0, 255), (255, 255, 0), (0, 255, 0), (255, 0, 0), (0, 0, 255)]
-                color = colors[(row + col) % len(colors)]
-                
-                # Different font sizes
-                font_sizes = [0.8, 1.0, 1.2, 1.5]
-                font_size = font_sizes[row % len(font_sizes)]
-                
-                # Draw the finger count
-                cv2.putText(image, f"{finger_count}", 
-                           (x, y), 
-                           cv2.FONT_HERSHEY_SIMPLEX, font_size, color, 2)
-        
-        # Giant center display
-        cv2.putText(image, f"FINGERS: {finger_count}", 
-                   (width // 2 - 150, height // 2), 
-                   cv2.FONT_HERSHEY_SIMPLEX, 2.0, (255, 255, 255), 5)
-        
-        # Border displays
-        border_positions = [
-            (10, 30), (width//2-50, 30), (width-100, 30),  # Top
-            (10, height-30), (width//2-50, height-30), (width-100, height-30),  # Bottom
-            (10, height//2), (width-100, height//2),  # Left and right middle
-        ]
-        
-        for x, y in border_positions:
-            cv2.putText(image, f"FINGERS: {finger_count}", 
-                       (x, y), 
-                       cv2.FONT_HERSHEY_SIMPLEX, 1.0, (0, 255, 255), 3)
-        
-        # Corner displays with different styles
-        corners = [(10, 50), (width-150, 50), (10, height-50), (width-150, height-50)]
-        for i, (x, y) in enumerate(corners):
-            cv2.putText(image, f"FINGERS: {finger_count}", 
-                       (x, y), 
-                       cv2.FONT_HERSHEY_SIMPLEX, 1.3, (255, 255, 255), 4)
+        cv2.putText(image, f"FINGERS: {finger_count}", (10, 50), cv2.FONT_HERSHEY_SIMPLEX, 1.2, (0, 255, 255), 3)
 
 class HandTrackerApp:
     def __init__(self):
@@ -430,18 +323,15 @@ class HandTrackerApp:
         landmarks = self.hand_tracker.get_landmarks(image, hand_no=0, draw_points=False)
         if landmarks:
             # Count extended fingers
-            finger_count, fingers_extended = self.hand_tracker.count_extended_fingers(landmarks)
+            finger_count, _ = self.hand_tracker.count_extended_fingers(landmarks)
             
             # Draw finger count in top left
             self.hand_tracker.draw_finger_count(image, finger_count)
             
-            # Draw debug information
-            self.hand_tracker.draw_debug_info(image, landmarks)
-        
-        # Detect gesture
-        gesture = self.hand_tracker.process_gesture(image)
-        if gesture:
-            self.hand_tracker.draw_arrow_next_to_hand(image, gesture, landmarks)
+            # Detect gesture
+            gesture = self.hand_tracker.process_gesture(image)
+            if gesture:
+                self.hand_tracker.draw_arrow_next_to_hand(image, gesture, landmarks)
         
         return image
     
@@ -461,25 +351,14 @@ class HandTrackerApp:
     
     def draw_info(self, image, fps=None, hand_count=None, finger_count=None):
         """
-        Draw information on the image
+        Draw only hand and finger count in the top left
         """
         y_offset = 30
-        
-        # Draw FPS
-        if fps is not None:
-            cv2.putText(image, f"FPS: {int(fps)}", (10, y_offset), 
-                       cv2.FONT_HERSHEY_SIMPLEX, 0.7, self.colors['fps'], 2)
-            y_offset += 30
-        
-        # Draw hand count
         if hand_count is not None:
-            cv2.putText(image, f"Hands: {hand_count}", (10, y_offset), 
-                       cv2.FONT_HERSHEY_SIMPLEX, 0.7, self.colors['hand'], 2)
+            cv2.putText(image, f"Hands: {hand_count}", (10, y_offset), cv2.FONT_HERSHEY_SIMPLEX, 0.9, (255, 0, 255), 2)
             y_offset += 30
-        
-        # Draw instructions
-        cv2.putText(image, "Press 'q' to quit", (10, image.shape[0] - 20), 
-                   cv2.FONT_HERSHEY_SIMPLEX, 0.5, self.colors['text'], 1)
+        if finger_count is not None:
+            cv2.putText(image, f"FINGERS: {finger_count}", (10, y_offset), cv2.FONT_HERSHEY_SIMPLEX, 1.2, (0, 255, 255), 3)
 
 def main():
     """
