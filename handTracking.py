@@ -4,6 +4,7 @@ import time
 import numpy as np
 import pyttsx3
 
+#gotta save the streak
 class HandTracker:
     def __init__(self, static_mode=False, max_hands=2, detection_confidence=0.5, tracking_confidence=0.5):
         """
